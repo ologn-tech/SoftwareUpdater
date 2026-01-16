@@ -2,6 +2,7 @@ package tech.ologn.softwareupdater;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.Menu;
@@ -85,6 +86,20 @@ public class MainActivity extends AppCompatActivity {
                             null)
                     .commit();
         }
+
+        setupLayoutPreferences();
+
+        uiResetWidgets();
+    }
+
+    private void setupLayoutPreferences() {
+        mTextViewBuild = findViewById(R.id.textViewBuild);
+
+    }
+
+    /** resets ui */
+    private void uiResetWidgets() {
+        mTextViewBuild.setText(Build.DISPLAY);
     }
 
     @Override
