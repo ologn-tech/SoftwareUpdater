@@ -7,6 +7,9 @@ import androidx.fragment.app.Fragment;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.TextView;
+
+import tech.ologn.softwareupdater.utils.UpdateConfigs;
 
 public class AdvanceFragment extends Fragment {
 
@@ -20,6 +23,12 @@ public class AdvanceFragment extends Fragment {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+    }
+
+    @Override
+    public void onViewCreated(View view, Bundle savedInstanceState) {
+        TextView mTextViewConfigsDirHint = view.findViewById(R.id.textViewConfigsDirHint);
+        mTextViewConfigsDirHint.setText(UpdateConfigs.getConfigsRoot(requireContext()));
     }
 
     @Override
