@@ -4,10 +4,14 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.UpdateEngine;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
+import android.view.View;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.ProgressBar;
 import android.widget.Spinner;
@@ -15,6 +19,10 @@ import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.fragment.app.Fragment;
+
+import java.util.List;
+
+import tech.ologn.softwareupdater.utils.UpdateConfigs;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -45,14 +53,14 @@ public class MainActivity extends AppCompatActivity {
     private TextView mTextViewEngineStatus;
     private TextView mTextViewEngineErrorCode;
 
-//    private List<UpdateConfig> mConfigs;
-//    private UpdateStateManager mUpdateStateManager;
+    private List<UpdateConfig> mConfigs;
+    private UpdateStateManager mUpdateStateManager;
 //    private UpdateBroadcastReceiver mBroadcastReceiver;
     private SharedPreferences mSharedPreferences;
     private String mCurrentMode = MODE_EASY;
 
-//    private final UpdateManager mUpdateManager =
-//            new UpdateManager(new UpdateEngine(), new Handler());
+    private final UpdateManager mUpdateManager =
+            new UpdateManager(new UpdateEngine(), new Handler());
 
     private boolean mIsApply = false;
     private boolean mIsNewVersion = false;
@@ -88,18 +96,186 @@ public class MainActivity extends AppCompatActivity {
         }
 
         setupLayoutPreferences();
+//        setupClickListeners();
+
+//        mUpdateStateManager = new UpdateStateManager(this);
+//        setupBroadcastReceiver();
 
         uiResetWidgets();
+//        loadUpdateConfigs();
+
+        mUpdateManager.setOnStateChangeCallback(this::onUpdaterStateChange);
+//        mUpdateManager.setOnEngineStatusUpdateCallback(this::onEngineStatusUpdate);
+//        mUpdateManager.setOnEngineCompleteCallback(this::onEnginePayloadApplicationComplete);
+//        mUpdateManager.setOnProgressUpdateCallback(this::onProgressUpdate);
+//        mUpdateManager.setUpdateStateManager(mUpdateStateManager);
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        // Binding to UpdateEngine invokes onStatusUpdate callback,
+        // persisted updater state has to be loaded and prepared beforehand.
+        mUpdateManager.bind();
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        mUpdateManager.unbind();
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        // Only clear callbacks if no active operations are running
+        if (!mUpdateStateManager.hasActiveOperations()) {
+            mUpdateManager.setOnEngineStatusUpdateCallback(null);
+            mUpdateManager.setOnProgressUpdateCallback(null);
+            mUpdateManager.setOnEngineCompleteCallback(null);
+        }
+
     }
 
     private void setupLayoutPreferences() {
         mTextViewBuild = findViewById(R.id.textViewBuild);
+        mTextViewUpdaterState = findViewById(R.id.textViewUpdaterState);
 
     }
 
     /** resets ui */
     private void uiResetWidgets() {
         mTextViewBuild.setText(Build.DISPLAY);
+    }
+
+    private void uiStateIdle() {
+        uiResetWidgets();
+        if (!mIsNewVersion) {
+            return;
+        }
+
+        if (MODE_EASY.equals(mCurrentMode)) {
+            if (mButtonInstall != null) {
+                mButtonInstall.setEnabled(false);
+            }
+        } else {
+            mSpinnerConfigs.setEnabled(true);
+            mProgressBar.setProgress(0);
+            // Advanced mode elements
+            if (mButtonDownloadConfig != null) {
+                mButtonDownloadConfig.setEnabled(true);
+            }
+            if (mButtonApplyConfig != null) {
+                mButtonApplyConfig.setEnabled(true);
+            }
+        }
+    }
+
+    private void uiStateRunning() {
+        uiResetWidgets();
+        if (MODE_ADVANCED.equals(mCurrentMode)) {
+            mProgressBar.setEnabled(true);
+            mProgressBar.setVisibility(ProgressBar.VISIBLE);
+        }
+    }
+
+    private void uiStatePaused() {
+        uiResetWidgets();
+        if (MODE_ADVANCED.equals(mCurrentMode)) {
+            mProgressBar.setEnabled(true);
+            mProgressBar.setVisibility(ProgressBar.VISIBLE);
+        }
+    }
+
+    private void uiStateSlotSwitchRequired() {
+        uiResetWidgets();
+        if (MODE_ADVANCED.equals(mCurrentMode)) {
+            mProgressBar.setEnabled(true);
+            mProgressBar.setVisibility(ProgressBar.VISIBLE);
+        }
+    }
+
+    private void uiStateError() {
+        uiResetWidgets();
+        if (MODE_ADVANCED.equals(mCurrentMode)) {
+            mProgressBar.setVisibility(ProgressBar.VISIBLE);
+        }
+    }
+
+    private void uiStateRebootRequired() {
+        uiResetWidgets();
+        if (mButtonReboot != null) {
+            mButtonReboot.setVisibility(View.VISIBLE);
+        }
+    }
+
+    /**
+     * @param state updater sample state
+     */
+    private void setUiUpdaterState(int state) {
+        if (mTextViewUpdaterState != null) {
+            String stateText = UpdaterState.getStateText(state);
+            mTextViewUpdaterState.setText(stateText + "/" + state);
+        }
+    }
+
+    /**
+     * Invoked when SystemUpdaterSample app state changes.
+     * Value of {@code state} will be one of the
+     * values from {@link UpdaterState}.
+     */
+    private void onUpdaterStateChange(int state) {
+        Log.i(TAG, "UpdaterStateChange state="
+                + UpdaterState.getStateText(state)
+                + "/" + state);
+
+        runOnUiThread(() -> {
+            setUiUpdaterState(state);
+
+            if (state == UpdaterState.IDLE) {
+                uiStateIdle();
+            } else if (state == UpdaterState.RUNNING) {
+                uiStateRunning();
+            } else if (state == UpdaterState.PAUSED) {
+                uiStatePaused();
+            } else if (state == UpdaterState.ERROR) {
+                uiStateError();
+            } else if (state == UpdaterState.SLOT_SWITCH_REQUIRED) {
+                uiStateSlotSwitchRequired();
+            } else if (state == UpdaterState.REBOOT_REQUIRED) {
+                uiStateRebootRequired();
+            }
+        });
+    }
+
+    private void loadConfigsToSpinner(List<UpdateConfig> configs) {
+        if (MODE_ADVANCED.equals(mCurrentMode)) {
+            String[] spinnerArray = UpdateConfigs.configsToNames(configs);
+            ArrayAdapter<String> spinnerArrayAdapter = new ArrayAdapter<>(this,
+                    android.R.layout.simple_spinner_item,
+                    spinnerArray);
+            spinnerArrayAdapter.setDropDownViewResource(android.R.layout
+                    .simple_spinner_dropdown_item);
+            mSpinnerConfigs.setAdapter(spinnerArrayAdapter);
+        }
+    }
+
+    private UpdateConfig getSelectedConfig() {
+        if (mConfigs == null || mConfigs.isEmpty()) {
+            return null;
+        }
+        if (mSpinnerConfigs == null) {
+            return mConfigs.get(mConfigs.size() - 1);
+        }
+        return mConfigs.get(mSpinnerConfigs.getSelectedItemPosition());
+    }
+
+    /**
+     * loads json configurations from configs dir that is defined in {@link UpdateConfigs}.
+     */
+    private void loadUpdateConfigs() {
+        mConfigs = UpdateConfigs.getUpdateConfigs(this);
+        loadConfigsToSpinner(mConfigs);
     }
 
     @Override
