@@ -1,5 +1,6 @@
 package tech.ologn.softwareupdater;
 
+import android.app.AlertDialog;
 import android.os.Bundle;
 
 import androidx.fragment.app.Fragment;
@@ -8,15 +9,17 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
+import android.widget.Button;
 import android.widget.Spinner;
 import android.widget.TextView;
 
 import java.util.List;
 
+import tech.ologn.softwareupdater.utils.DialogHelper;
 import tech.ologn.softwareupdater.utils.UpdateConfigs;
 
 public class AdvanceFragment extends Fragment {
-
+    List<UpdateConfig> mConfigs;
     private Spinner mSpinnerConfigs;
 
     public AdvanceFragment() {
@@ -39,6 +42,9 @@ public class AdvanceFragment extends Fragment {
         mSpinnerConfigs = view.findViewById(R.id.spinnerConfigs);
 
         loadUpdateConfigs();
+
+        Button mButtonViewConfig = view.findViewById(R.id.buttonViewConfig);
+        mButtonViewConfig.setOnClickListener(v -> onViewConfigClick());
     }
 
     @Override
@@ -52,7 +58,7 @@ public class AdvanceFragment extends Fragment {
      * loads json configurations from configs dir that is defined in {@link UpdateConfigs}.
      */
     private void loadUpdateConfigs() {
-        List<UpdateConfig> mConfigs = UpdateConfigs.getUpdateConfigs(requireContext());
+        mConfigs = UpdateConfigs.getUpdateConfigs(requireContext());
         loadConfigsToSpinner(mConfigs);
     }
 
@@ -65,5 +71,24 @@ public class AdvanceFragment extends Fragment {
                 .simple_spinner_dropdown_item);
         mSpinnerConfigs.setAdapter(spinnerArrayAdapter);
 
+    }
+
+    /**
+     * view config button is clicked
+     */
+    public void onViewConfigClick() {
+        if (mConfigs == null || mConfigs.isEmpty()) {
+            DialogHelper.show(requireContext(),
+                    DialogHelper.Type.ERROR,
+                    "No Config Files",
+                    "No update configurations available. Please download a config file first.");
+            return;
+        }
+        UpdateConfig config = mConfigs.get(mSpinnerConfigs.getSelectedItemPosition());
+        new AlertDialog.Builder(requireContext())
+                .setTitle(config.getName())
+                .setMessage(config.getRawJson())
+                .setNegativeButton("Close", (dialog, id) -> dialog.dismiss())
+                .show();
     }
 }
