@@ -45,6 +45,9 @@ public class AdvanceFragment extends Fragment {
 
         Button mButtonViewConfig = view.findViewById(R.id.buttonViewConfig);
         mButtonViewConfig.setOnClickListener(v -> onViewConfigClick());
+
+        Button mButtonReload = view.findViewById(R.id.buttonReload);
+        mButtonReload.setOnClickListener(v -> onReloadClick());
     }
 
     @Override
@@ -90,5 +93,12 @@ public class AdvanceFragment extends Fragment {
                 .setMessage(config.getRawJson())
                 .setNegativeButton("Close", (dialog, id) -> dialog.dismiss())
                 .show();
+    }
+
+    /**
+     * reload button is clicked
+     */
+    public void onReloadClick() {
+        loadUpdateConfigs();
     }
 }
