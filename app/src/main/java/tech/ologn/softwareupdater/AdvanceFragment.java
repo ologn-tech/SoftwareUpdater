@@ -19,11 +19,12 @@ import java.util.List;
 import tech.ologn.softwareupdater.utils.DialogHelper;
 import tech.ologn.softwareupdater.utils.UpdateConfigs;
 
-public class AdvanceFragment extends Fragment {
+public class AdvanceFragment extends Fragment implements UpdateListener {
     private static final String TAG = "AdvanceFragment";
     List<UpdateConfig> mConfigs;
     private Spinner mSpinnerConfigs;
     Button mButtonDownloadConfig;
+    Button mButtonApplyConfig;
     TextView mTextViewEngineStatus;
     TextView mTextViewEngineErrorCode;
     ModeActionListener listener;
@@ -101,6 +102,7 @@ public class AdvanceFragment extends Fragment {
                 activity.mBroadcastReceiver.addListener(mBroadcastListener);
             }
         }
+        mButtonApplyConfig.setEnabled(false);
     }
 
     @Override
@@ -135,6 +137,9 @@ public class AdvanceFragment extends Fragment {
 
         mTextViewEngineStatus = view.findViewById(R.id.textViewEngineStatus);
         mTextViewEngineErrorCode = view.findViewById(R.id.textViewEngineErrorCode);
+
+        mButtonApplyConfig = view.findViewById(R.id.buttonApplyConfig);
+        mButtonApplyConfig.setOnClickListener( v -> listener.onUpdate());
     }
 
     @Override
@@ -195,5 +200,10 @@ public class AdvanceFragment extends Fragment {
      */
     public void onReloadClick() {
         loadUpdateConfigs();
+    }
+
+    @Override
+    public void onValidUpdate(boolean valid) {
+        mButtonApplyConfig.setEnabled(valid);
     }
 }

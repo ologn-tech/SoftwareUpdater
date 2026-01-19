@@ -1,5 +1,6 @@
 package tech.ologn.softwareupdater;
 
+import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -33,7 +34,7 @@ import tech.ologn.softwareupdater.utils.UpdateConfigs;
 import tech.ologn.softwareupdater.utils.UpdateEngineErrorCodes;
 import tech.ologn.softwareupdater.utils.UpdateEngineStatuses;
 
-public class MainActivity extends AppCompatActivity implements ModeActionListener {
+public class MainActivity extends AppCompatActivity implements ModeActionListener{
 
     public static final String ACTION_SOFTWARE_UPDATE_SETTINGS = "com.android.settings.action.SOFTWARE_UPDATE_SETTINGS";
     private static final String TAG = "SoftwareUpdateSettings";
@@ -48,13 +49,7 @@ public class MainActivity extends AppCompatActivity implements ModeActionListene
     private static final String MODE_ADVANCED = "advanced";
 
     private TextView mTextViewBuild;
-    private Spinner mSpinnerConfigs;
-    private TextView mTextViewConfigsDirHint;
-    private Button mButtonViewConfig;
-    private Button mButtonReload;
-    private Button mButtonApplyConfig;
     private Button mButtonReboot;
-    private Button mButtonInstall;
     private ProgressBar mProgressBar;
     private TextView mTextViewUpdaterState;
     private List<UpdateConfig> mConfigs;
@@ -317,10 +312,7 @@ public class MainActivity extends AppCompatActivity implements ModeActionListene
         if (mConfigs == null || mConfigs.isEmpty()) {
             return null;
         }
-        if (mSpinnerConfigs == null) {
-            return mConfigs.get(mConfigs.size() - 1);
-        }
-        return mConfigs.get(mSpinnerConfigs.getSelectedItemPosition());
+        return mConfigs.get(mConfigs.size() - 1);
     }
 
     /**
@@ -328,6 +320,51 @@ public class MainActivity extends AppCompatActivity implements ModeActionListene
      */
     private void loadUpdateConfigs() {
         mConfigs = UpdateConfigs.getUpdateConfigs(this);
+    }
+
+    private void applyUpdate(UpdateConfig config) {
+        if (config == null) {
+            DialogHelper.show(this, DialogHelper.Type.ERROR,"No Config Selected", "No update configuration selected. Please select a config file first.");
+            return;
+        }
+        try {
+            // Check if we're in ERROR state and reset to IDLE first
+            if (mUpdateManager.getUpdaterState() == UpdaterState.ERROR) {
+                Log.i(TAG, "Resetting from ERROR state to IDLE before applying update");
+                mUpdateManager.resetUpdate();
+                // Add a small delay to ensure state reset completes
+                new Handler().postDelayed(() -> {
+                    try {
+                        mUpdateManager.applyUpdate(this, config);
+                    } catch (UpdaterState.InvalidTransitionException ex) {
+                        Log.e(TAG, "Failed to apply update after state reset " + config.getName(), ex);
+                    }
+                }, 100);
+                return;
+            }
+            mUpdateManager.applyUpdate(this, config);
+        } catch (UpdaterState.InvalidTransitionException e) {
+            Log.e(TAG, "Failed to apply update " + config.getName(), e);
+        }
+    }
+
+    public void onInstallClick() {
+        if (mConfigs == null || mConfigs.isEmpty()) {
+            DialogHelper.show(this, DialogHelper.Type.ERROR,"No Updates", "No update configurations available. Please check status first.");
+            return;
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("Update new version")
+                .setMessage("Do you want to install the selected update?")
+                .setIcon(android.R.drawable.ic_dialog_alert)
+                .setPositiveButton(android.R.string.ok, (dialog, whichButton) -> {
+                    uiResetWidgets();
+                    uiResetEngineText();
+                    applyUpdate(getSelectedConfig());
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
     /**
@@ -435,28 +472,23 @@ public class MainActivity extends AppCompatActivity implements ModeActionListene
 
                     mUpdateStateManager.removeAllDownloads();
 
-                    Double version = SystemPropertiesHelper.getVersion();
-                    Log.i(TAG, "Version: " + version);
-
+                    String versionStr = SystemPropertiesHelper.getVersion();
                     String nameConfig = mConfigs.get(mConfigs.size() - 1).getName();
-                    String curentVersionFromConfigStr = nameConfig.split("_Ver")[1];
-                    Double curentVersionFromConfig = Double.parseDouble(curentVersionFromConfigStr);
-                    Log.i(TAG, "Current Version: " + version + " Version from config: " + curentVersionFromConfig);
-                    if ((curentVersionFromConfig - version >= 0.2) && (nameConfig.contains("Incremental"))) {
-                        Log.i(TAG, "New version found > 0.1, but it is not compatible with the current version.");
+                    String configVersionStr = nameConfig.split("_Ver")[1];
+
+                    int result = compareVersion(configVersionStr, versionStr);
+
+                    Log.i(TAG, "Current=" + versionStr + " Config=" + configVersionStr);
+                    if (result >= 1 && nameConfig.contains("Incremental")) {
+                        Log.i(TAG, "New version found, but it is not compatible with the current version.");
                         mIsIncrementalUpdate = false;
                         mHasTriedFullUpdate = true;
                         onDownloadConfigClick(CONFIG_URL_FULL);
                         return;
-                    } else if (curentVersionFromConfig - version > 0.05) {
+                    } else if (result > 0) {
                         uiStateIdle();
                         mIsNewVersion = true;
-                        if (mButtonInstall != null) {
-                            mButtonInstall.setEnabled(true);
-                        }
-                        if (mButtonApplyConfig != null) {
-                            mButtonApplyConfig.setEnabled(true);
-                        }
+                        triggerOnValidUpdate(true);
                         Log.i(TAG, "New version found, but it is not compatible with the current version.");
                     } else{
                         Log.i(TAG, "No new version found.");
@@ -466,14 +498,9 @@ public class MainActivity extends AppCompatActivity implements ModeActionListene
                     }
 
                     if (mIsApply || mHasTriedFullUpdate) {
-                        if (mButtonInstall != null) {
-                            mButtonInstall.setEnabled(false);
-                        }
-                        if (mButtonApplyConfig != null) {
-                            mButtonApplyConfig.setEnabled(false);
-                        }
+                        triggerOnValidUpdate(false);
                         uiResetEngineText();
-//                        applyUpdate(getSelectedConfig());
+                        applyUpdate(getSelectedConfig());
                         mIsApply = false;
                         // Reset the fallback flag after applying
                         if (mHasTriedFullUpdate) {
@@ -550,6 +577,23 @@ public class MainActivity extends AppCompatActivity implements ModeActionListene
         ContextCompat.registerReceiver(this, mBroadcastReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
     }
 
+    public static int compareVersion(String v1, String v2) {
+        String[] p1 = v1.split("\\.");
+        String[] p2 = v2.split("\\.");
+
+        int len = Math.max(p1.length, p2.length);
+
+        for (int i = 0; i < len; i++) {
+            int n1 = i < p1.length ? Integer.parseInt(p1[i]) : 0;
+            int n2 = i < p2.length ? Integer.parseInt(p2[i]) : 0;
+
+            if (n1 != n2) {
+                return n1 - n2;
+            }
+        }
+        return 0;
+    }
+
     @Override
     public void onCheckStatus() {
         mIsIncrementalUpdate = true;
@@ -557,4 +601,19 @@ public class MainActivity extends AppCompatActivity implements ModeActionListene
         onDownloadConfigClick(CONFIG_URL_INCREMENTAL);
     }
 
+    @Override
+    public void onUpdate() {
+        onInstallClick();
+    }
+
+    /**
+     * Triggers onValidUpdate on the current fragment if it implements UpdateListener
+     */
+    private void triggerOnValidUpdate(boolean valid) {
+        Fragment fragment = getSupportFragmentManager()
+                .findFragmentById(R.id.fragment_container_view);
+        if (fragment instanceof UpdateListener) {
+            ((UpdateListener) fragment).onValidUpdate(valid);
+        }
+    }
 }

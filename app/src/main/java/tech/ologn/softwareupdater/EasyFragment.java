@@ -10,12 +10,13 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 
-public class EasyFragment extends Fragment {
+public class EasyFragment extends Fragment implements UpdateListener{
 
     private static final String TAG = "EasyFragment";
     ModeActionListener listener;
 
     Button mButtonCheckStatus;
+    Button mButtonInstallConfig;
     private UpdateBroadcastReceiver.UpdateListener mBroadcastListener;
 
     public EasyFragment() {
@@ -89,6 +90,7 @@ public class EasyFragment extends Fragment {
                 activity.mBroadcastReceiver.addListener(mBroadcastListener);
             }
         }
+        mButtonInstallConfig.setEnabled(false);
     }
 
     @Override
@@ -114,5 +116,13 @@ public class EasyFragment extends Fragment {
     public void onViewCreated(View view, Bundle savedInstanceState) {
         mButtonCheckStatus = view.findViewById(R.id.buttonCheckStatus);
         mButtonCheckStatus.setOnClickListener(v -> listener.onCheckStatus());
+
+        mButtonInstallConfig = view.findViewById(R.id.buttonInstall);
+        mButtonInstallConfig.setOnClickListener( v -> listener.onUpdate());
+    }
+
+    @Override
+    public void onValidUpdate(boolean valid) {
+        mButtonInstallConfig.setEnabled(valid);
     }
 }
