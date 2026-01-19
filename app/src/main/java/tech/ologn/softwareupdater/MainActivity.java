@@ -1,6 +1,8 @@
 package tech.ologn.softwareupdater;
 
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Bundle;
@@ -18,13 +20,18 @@ import android.widget.Spinner;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 
 import java.util.List;
 
+import tech.ologn.softwareupdater.services.ForegroundConfigDownloadService;
+import tech.ologn.softwareupdater.services.ForegroundPrepareUpdateService;
+import tech.ologn.softwareupdater.utils.DialogHelper;
+import tech.ologn.softwareupdater.utils.SystemPropertiesHelper;
 import tech.ologn.softwareupdater.utils.UpdateConfigs;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements ModeActionListener {
 
     public static final String ACTION_SOFTWARE_UPDATE_SETTINGS = "com.android.settings.action.SOFTWARE_UPDATE_SETTINGS";
     private static final String TAG = "SoftwareUpdateSettings";
@@ -41,12 +48,10 @@ public class MainActivity extends AppCompatActivity {
     private TextView mTextViewBuild;
     private Spinner mSpinnerConfigs;
     private TextView mTextViewConfigsDirHint;
-    private Button mButtonDownloadConfig;
     private Button mButtonViewConfig;
     private Button mButtonReload;
     private Button mButtonApplyConfig;
     private Button mButtonReboot;
-    private Button mButtonCheckStatus;
     private Button mButtonInstall;
     private ProgressBar mProgressBar;
     private TextView mTextViewUpdaterState;
@@ -55,7 +60,7 @@ public class MainActivity extends AppCompatActivity {
 
     private List<UpdateConfig> mConfigs;
     private UpdateStateManager mUpdateStateManager;
-//    private UpdateBroadcastReceiver mBroadcastReceiver;
+    public UpdateBroadcastReceiver mBroadcastReceiver;
     private SharedPreferences mSharedPreferences;
     private String mCurrentMode = MODE_EASY;
 
@@ -80,7 +85,7 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         Fragment fragment;
-        if (MODE_EASY.equals(mCurrentMode) && mCurrentSwitch ) {
+        if (MODE_EASY.equals(mCurrentMode)) {
             fragment = new EasyFragment();
         } else {
             fragment = new AdvanceFragment();
@@ -98,8 +103,8 @@ public class MainActivity extends AppCompatActivity {
         setupLayoutPreferences();
 //        setupClickListeners();
 
-//        mUpdateStateManager = new UpdateStateManager(this);
-//        setupBroadcastReceiver();
+        mUpdateStateManager = new UpdateStateManager(this);
+        setupBroadcastReceiver();
 
         uiResetWidgets();
 //        loadUpdateConfigs();
@@ -108,7 +113,7 @@ public class MainActivity extends AppCompatActivity {
 //        mUpdateManager.setOnEngineStatusUpdateCallback(this::onEngineStatusUpdate);
 //        mUpdateManager.setOnEngineCompleteCallback(this::onEnginePayloadApplicationComplete);
 //        mUpdateManager.setOnProgressUpdateCallback(this::onProgressUpdate);
-//        mUpdateManager.setUpdateStateManager(mUpdateStateManager);
+        mUpdateManager.setUpdateStateManager(mUpdateStateManager);
     }
 
     @Override
@@ -128,8 +133,12 @@ public class MainActivity extends AppCompatActivity {
     @Override
     public void onDestroy() {
         super.onDestroy();
+        // Unregister broadcast receiver
+        if (mBroadcastReceiver != null) {
+            unregisterReceiver(mBroadcastReceiver);
+        }
         // Only clear callbacks if no active operations are running
-        if (!mUpdateStateManager.hasActiveOperations()) {
+        if (mUpdateStateManager != null && !mUpdateStateManager.hasActiveOperations()) {
             mUpdateManager.setOnEngineStatusUpdateCallback(null);
             mUpdateManager.setOnProgressUpdateCallback(null);
             mUpdateManager.setOnEngineCompleteCallback(null);
@@ -152,22 +161,6 @@ public class MainActivity extends AppCompatActivity {
         uiResetWidgets();
         if (!mIsNewVersion) {
             return;
-        }
-
-        if (MODE_EASY.equals(mCurrentMode)) {
-            if (mButtonInstall != null) {
-                mButtonInstall.setEnabled(false);
-            }
-        } else {
-            mSpinnerConfigs.setEnabled(true);
-            mProgressBar.setProgress(0);
-            // Advanced mode elements
-            if (mButtonDownloadConfig != null) {
-                mButtonDownloadConfig.setEnabled(true);
-            }
-            if (mButtonApplyConfig != null) {
-                mButtonApplyConfig.setEnabled(true);
-            }
         }
     }
 
@@ -248,18 +241,6 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    private void loadConfigsToSpinner(List<UpdateConfig> configs) {
-        if (MODE_ADVANCED.equals(mCurrentMode)) {
-            String[] spinnerArray = UpdateConfigs.configsToNames(configs);
-            ArrayAdapter<String> spinnerArrayAdapter = new ArrayAdapter<>(this,
-                    android.R.layout.simple_spinner_item,
-                    spinnerArray);
-            spinnerArrayAdapter.setDropDownViewResource(android.R.layout
-                    .simple_spinner_dropdown_item);
-            mSpinnerConfigs.setAdapter(spinnerArrayAdapter);
-        }
-    }
-
     private UpdateConfig getSelectedConfig() {
         if (mConfigs == null || mConfigs.isEmpty()) {
             return null;
@@ -275,7 +256,29 @@ public class MainActivity extends AppCompatActivity {
      */
     private void loadUpdateConfigs() {
         mConfigs = UpdateConfigs.getUpdateConfigs(this);
-        loadConfigsToSpinner(mConfigs);
+    }
+
+    /**
+     * download config button is clicked
+     */
+    public void onDownloadConfigClick(String configUrl) {
+
+        if (mButtonReboot != null) {
+            mButtonReboot.setVisibility(View.GONE);
+        }
+
+        // Use foreground service for persistent download
+        String downloadId = mUpdateStateManager.generateDownloadId();
+        UpdateStateManager.ActiveDownload activeDownload =
+                new UpdateStateManager.ActiveDownload(downloadId, configUrl);
+        mUpdateStateManager.addActiveDownload(activeDownload);
+
+        Intent intent = new Intent(this, ForegroundConfigDownloadService.class);
+        intent.putExtra(ForegroundConfigDownloadService.EXTRA_CONFIG_URL, configUrl);
+        intent.putExtra(ForegroundConfigDownloadService.EXTRA_DOWNLOAD_ID, downloadId);
+        startService(intent);
+
+        Log.i(TAG, "Started foreground config download: " + downloadId );
     }
 
     @Override
@@ -338,4 +341,148 @@ public class MainActivity extends AppCompatActivity {
             invalidateOptionsMenu(); // refresh menu visibility
         }
     }
+
+    /**
+     * Setup broadcast receiver to handle updates from foreground services
+     */
+    private void setupBroadcastReceiver() {
+        mBroadcastReceiver = new UpdateBroadcastReceiver();
+        mBroadcastReceiver.addListener(new UpdateBroadcastReceiver.UpdateListener() {
+            @Override
+            public void onDownloadStarted(String downloadId) {
+               runOnUiThread(() -> {
+                    Log.i(TAG, "Config download started: " + downloadId);
+                    uiResetWidgets();
+                });
+            }
+
+            @Override
+            public void onDownloadSuccess(String downloadId, String filename) {
+                runOnUiThread(() -> {
+                    loadUpdateConfigs(); // Reload configs to show the new one
+
+                    mUpdateStateManager.removeAllDownloads();
+
+                    Double version = SystemPropertiesHelper.getVersion();
+                    Log.i(TAG, "Version: " + version);
+
+                    String nameConfig = mConfigs.get(mConfigs.size() - 1).getName();
+                    String curentVersionFromConfigStr = nameConfig.split("_Ver")[1];
+                    Double curentVersionFromConfig = Double.parseDouble(curentVersionFromConfigStr);
+                    Log.i(TAG, "Current Version: " + version + " Version from config: " + curentVersionFromConfig);
+                    if ((curentVersionFromConfig - version >= 0.2) && (nameConfig.contains("Incremental"))) {
+                        Log.i(TAG, "New version found > 0.1, but it is not compatible with the current version.");
+                        mIsIncrementalUpdate = false;
+                        mHasTriedFullUpdate = true;
+                        onDownloadConfigClick(CONFIG_URL_FULL);
+                        return;
+                    } else if (curentVersionFromConfig - version > 0.05) {
+                        uiStateIdle();
+                        mIsNewVersion = true;
+                        if (mButtonInstall != null) {
+                            mButtonInstall.setEnabled(true);
+                        }
+                        if (mButtonApplyConfig != null) {
+                            mButtonApplyConfig.setEnabled(true);
+                        }
+                        Log.i(TAG, "New version found, but it is not compatible with the current version.");
+                    } else{
+                        Log.i(TAG, "No new version found.");
+                        mIsNewVersion = false;
+                        DialogHelper.show(MainActivity.this, DialogHelper.Type.SUCCESS,"", "No new version found.");
+                        return;
+                    }
+
+                    if (mIsApply || mHasTriedFullUpdate) {
+                        if (mButtonInstall != null) {
+                            mButtonInstall.setEnabled(false);
+                        }
+                        if (mButtonApplyConfig != null) {
+                            mButtonApplyConfig.setEnabled(false);
+                        }
+//                        uiResetEngineText();
+//                        applyUpdate(getSelectedConfig());
+                        mIsApply = false;
+                        // Reset the fallback flag after applying
+                        if (mHasTriedFullUpdate) {
+                            mHasTriedFullUpdate = false;
+                        }
+                    } else {
+                        DialogHelper.show(MainActivity.this, DialogHelper.Type.SUCCESS,"Success", "Config file downloaded successfully");
+                    }
+
+                });
+            }
+
+            @Override
+            public void onDownloadError(String downloadId, String errorMessage) {
+                runOnUiThread(() -> {
+                    DialogHelper.show(MainActivity.this, DialogHelper.Type.ERROR,"Download Failed", errorMessage);
+
+                    mUpdateStateManager.removeAllDownloads();
+                });
+            }
+
+            @Override
+            public void onDownloadProgress(String downloadId, int progress) {
+                runOnUiThread(() -> {
+                    mUpdateStateManager.updateDownloadProgress(downloadId, progress);
+                    // Update UI if needed
+                });
+            }
+
+            @Override
+            public void onPrepareStarted(String updateId) {
+                runOnUiThread(() -> {
+                    Log.i(TAG, "Update preparation started: " + updateId);
+                });
+            }
+
+            @Override
+            public void onPrepareSuccess(String updateId) {
+                runOnUiThread(() -> {
+                    Log.i(TAG, "Update preparation completed: " + updateId);
+                    mUpdateStateManager.removeActiveUpdate(updateId);
+                });
+            }
+
+            @Override
+            public void onPrepareError(String updateId, String errorMessage) {
+                runOnUiThread(() -> {
+                    Log.e(TAG, "Update preparation failed: " + updateId + ", error: " + errorMessage);
+                    DialogHelper.show(MainActivity.this, DialogHelper.Type.ERROR,"Update Preparation Failed", errorMessage);
+                    mUpdateStateManager.removeActiveUpdate(updateId);
+                });
+            }
+
+            @Override
+            public void onPrepareProgress(String updateId, int progress) {
+                runOnUiThread(() -> {
+                    mUpdateStateManager.updateUpdateProgress(updateId, progress);
+                    // Update UI if needed
+                });
+            }
+        });
+
+        // Register for all relevant broadcasts
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(ForegroundConfigDownloadService.ACTION_DOWNLOAD_STARTED);
+        filter.addAction(ForegroundConfigDownloadService.ACTION_DOWNLOAD_SUCCESS);
+        filter.addAction(ForegroundConfigDownloadService.ACTION_DOWNLOAD_ERROR);
+        filter.addAction(ForegroundConfigDownloadService.ACTION_DOWNLOAD_PROGRESS);
+        filter.addAction(ForegroundPrepareUpdateService.ACTION_PREPARE_STARTED);
+        filter.addAction(ForegroundPrepareUpdateService.ACTION_PREPARE_SUCCESS);
+        filter.addAction(ForegroundPrepareUpdateService.ACTION_PREPARE_ERROR);
+        filter.addAction(ForegroundPrepareUpdateService.ACTION_PREPARE_PROGRESS);
+
+        ContextCompat.registerReceiver(this, mBroadcastReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
+    }
+
+    @Override
+    public void onCheckStatus() {
+        mIsIncrementalUpdate = true;
+        mHasTriedFullUpdate = false;
+        onDownloadConfigClick(CONFIG_URL_INCREMENTAL);
+    }
+
 }

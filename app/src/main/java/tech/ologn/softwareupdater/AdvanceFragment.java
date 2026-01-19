@@ -5,6 +5,7 @@ import android.os.Bundle;
 
 import androidx.fragment.app.Fragment;
 
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -19,8 +20,13 @@ import tech.ologn.softwareupdater.utils.DialogHelper;
 import tech.ologn.softwareupdater.utils.UpdateConfigs;
 
 public class AdvanceFragment extends Fragment {
+    private static final String TAG = "AdvanceFragment";
     List<UpdateConfig> mConfigs;
     private Spinner mSpinnerConfigs;
+    Button mButtonDownloadConfig;
+
+    ModeActionListener listener;
+    private UpdateBroadcastReceiver.UpdateListener mBroadcastListener;
 
     public AdvanceFragment() {
         // Required empty public constructor
@@ -32,6 +38,80 @@ public class AdvanceFragment extends Fragment {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        listener = (ModeActionListener) getContext();
+
+        mBroadcastListener = new UpdateBroadcastReceiver.UpdateListener() {
+            @Override
+            public void onDownloadStarted(String downloadId) {
+                mButtonDownloadConfig.setText("Downloading...");
+                mButtonDownloadConfig.setEnabled(false);
+            }
+
+            @Override
+            public void onDownloadSuccess(String downloadId, String filename) {
+                // Reload configs when download succeeds
+                if (getView() != null) {
+                    loadUpdateConfigs();
+                    mButtonDownloadConfig.setText("Download Config");
+                    mButtonDownloadConfig.setEnabled(true);
+                }
+            }
+
+            @Override
+            public void onDownloadError(String downloadId, String errorMessage) {
+                mButtonDownloadConfig.setText("Download Config");
+                mButtonDownloadConfig.setEnabled(true);
+            }
+
+            @Override
+            public void onDownloadProgress(String downloadId, int progress) {
+                Log.d(TAG, "Download progress: " + downloadId + ", progress: " + progress + "%");
+            }
+
+            @Override
+            public void onPrepareStarted(String updateId) {
+                Log.i(TAG, "Prepare started: " + updateId);
+            }
+
+            @Override
+            public void onPrepareSuccess(String updateId) {
+                Log.i(TAG, "Prepare success: " + updateId);
+            }
+
+            @Override
+            public void onPrepareError(String updateId, String errorMessage) {
+                Log.e(TAG, "Prepare error: " + updateId + ", error: " + errorMessage);
+            }
+
+            @Override
+            public void onPrepareProgress(String updateId, int progress) {
+                Log.d(TAG, "Prepare progress: " + updateId + ", progress: " + progress + "%");
+            }
+        };
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        // Register listener with MainActivity's broadcast receiver
+        if (getActivity() instanceof MainActivity && mBroadcastListener != null) {
+            MainActivity activity = (MainActivity) getActivity();
+            if (activity.mBroadcastReceiver != null) {
+                activity.mBroadcastReceiver.addListener(mBroadcastListener);
+            }
+        }
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        // Unregister listener when fragment is paused
+        if (getActivity() instanceof MainActivity && mBroadcastListener != null) {
+            MainActivity activity = (MainActivity) getActivity();
+            if (activity.mBroadcastReceiver != null) {
+                activity.mBroadcastReceiver.removeListener(mBroadcastListener);
+            }
+        }
     }
 
     @Override
@@ -48,6 +128,10 @@ public class AdvanceFragment extends Fragment {
 
         Button mButtonReload = view.findViewById(R.id.buttonReload);
         mButtonReload.setOnClickListener(v -> onReloadClick());
+
+        mButtonDownloadConfig = view.findViewById(R.id.buttonDownloadConfig);
+        mButtonDownloadConfig.setOnClickListener(v -> listener.onCheckStatus());
+
     }
 
     @Override
