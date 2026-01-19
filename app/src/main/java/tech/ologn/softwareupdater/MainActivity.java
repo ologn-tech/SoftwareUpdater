@@ -8,6 +8,7 @@ import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.PowerManager;
 import android.os.UpdateEngine;
 import android.util.Log;
 import android.view.Menu;
@@ -144,6 +145,9 @@ public class MainActivity extends AppCompatActivity implements ModeActionListene
         mTextViewUpdaterState = findViewById(R.id.textViewUpdaterState);
 
         mProgressBar = findViewById(R.id.progressBar);
+
+        mButtonReboot = findViewById(R.id.buttonReboot);
+        mButtonReboot.setOnClickListener( v -> onRebootClick());
     }
 
     /** resets ui */
@@ -351,6 +355,11 @@ public class MainActivity extends AppCompatActivity implements ModeActionListene
         } catch (UpdaterState.InvalidTransitionException e) {
             Log.e(TAG, "Failed to apply update " + config.getName(), e);
         }
+    }
+
+    public void onRebootClick() {
+        PowerManager pm = getSystemService(PowerManager.class);
+        pm.reboot("update");
     }
 
     public void onInstallClick() {
