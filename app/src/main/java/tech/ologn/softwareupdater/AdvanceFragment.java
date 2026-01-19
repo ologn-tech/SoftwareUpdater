@@ -25,7 +25,7 @@ public class AdvanceFragment extends Fragment {
     private Spinner mSpinnerConfigs;
     Button mButtonDownloadConfig;
     TextView mTextViewEngineStatus;
-
+    TextView mTextViewEngineErrorCode;
     ModeActionListener listener;
     private UpdateBroadcastReceiver.UpdateListener mBroadcastListener;
 
@@ -134,6 +134,7 @@ public class AdvanceFragment extends Fragment {
         mButtonDownloadConfig.setOnClickListener(v -> listener.onCheckStatus());
 
         mTextViewEngineStatus = view.findViewById(R.id.textViewEngineStatus);
+        mTextViewEngineErrorCode = view.findViewById(R.id.textViewEngineErrorCode);
     }
 
     @Override
@@ -164,6 +165,10 @@ public class AdvanceFragment extends Fragment {
 
     public void setEngineStatusText(String text){
         mTextViewEngineStatus.setText(text);
+    }
+
+    public void setEngineErrorText(String text){
+        mTextViewEngineErrorCode.setText(text);
     }
 
     /**

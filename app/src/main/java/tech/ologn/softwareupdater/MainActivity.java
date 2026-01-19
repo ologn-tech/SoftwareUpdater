@@ -30,6 +30,7 @@ import tech.ologn.softwareupdater.services.ForegroundPrepareUpdateService;
 import tech.ologn.softwareupdater.utils.DialogHelper;
 import tech.ologn.softwareupdater.utils.SystemPropertiesHelper;
 import tech.ologn.softwareupdater.utils.UpdateConfigs;
+import tech.ologn.softwareupdater.utils.UpdateEngineErrorCodes;
 import tech.ologn.softwareupdater.utils.UpdateEngineStatuses;
 
 public class MainActivity extends AppCompatActivity implements ModeActionListener {
@@ -56,8 +57,6 @@ public class MainActivity extends AppCompatActivity implements ModeActionListene
     private Button mButtonInstall;
     private ProgressBar mProgressBar;
     private TextView mTextViewUpdaterState;
-    private TextView mTextViewEngineErrorCode;
-
     private List<UpdateConfig> mConfigs;
     private UpdateStateManager mUpdateStateManager;
     public UpdateBroadcastReceiver mBroadcastReceiver;
@@ -111,7 +110,7 @@ public class MainActivity extends AppCompatActivity implements ModeActionListene
 
         mUpdateManager.setOnStateChangeCallback(this::onUpdaterStateChange);
         mUpdateManager.setOnEngineStatusUpdateCallback(this::onEngineStatusUpdate);
-//        mUpdateManager.setOnEngineCompleteCallback(this::onEnginePayloadApplicationComplete);
+        mUpdateManager.setOnEngineCompleteCallback(this::onEnginePayloadApplicationComplete);
 //        mUpdateManager.setOnProgressUpdateCallback(this::onProgressUpdate);
         mUpdateManager.setUpdateStateManager(mUpdateStateManager);
     }
@@ -247,6 +246,7 @@ public class MainActivity extends AppCompatActivity implements ModeActionListene
 
         if (f instanceof AdvanceFragment) {
             ((AdvanceFragment) f).setEngineStatusText(getString(R.string.unknown));
+            ((AdvanceFragment) f).setEngineErrorText(getString(R.string.unknown));
         }
     }
 
@@ -274,6 +274,43 @@ public class MainActivity extends AppCompatActivity implements ModeActionListene
         if (f instanceof AdvanceFragment) {
             ((AdvanceFragment) f).setEngineStatusText(statusText + "/" + status);
         }
+    }
+
+    /**
+     * @param errorCode update engine error code
+     */
+    private void setUiEngineErrorCode(int errorCode) {
+        Fragment f = getSupportFragmentManager()
+                .findFragmentById(R.id.fragment_container_view);
+
+        if (f instanceof AdvanceFragment) {
+            String errorText = UpdateEngineErrorCodes.getCodeName(errorCode);
+            ((AdvanceFragment) f).setEngineErrorText(errorText + "/" + errorCode);
+        }
+    }
+
+    /**
+     * Invoked when the payload has been applied, whether successfully or
+     * unsuccessfully. The value of {@code errorCode} will be one of the
+     * values from {@link UpdateEngine.ErrorCodeConstants}.
+     */
+    private void onEnginePayloadApplicationComplete(int errorCode) {
+        final String completionState = UpdateEngineErrorCodes.isUpdateSucceeded(errorCode)
+                ? "SUCCESS"
+                : "FAILURE";
+        Log.i(TAG,
+                "PayloadApplicationCompleted - errorCode="
+                        + UpdateEngineErrorCodes.getCodeName(errorCode) + "/" + errorCode
+                        + " " + completionState);
+        runOnUiThread(() -> {
+            setUiEngineErrorCode(errorCode);
+
+            // Handle automatic fallback from incremental to full update on failure
+//            if (!UpdateEngineErrorCodes.isUpdateSucceeded(errorCode) &&
+//                    mIsIncrementalUpdate && !mHasTriedFullUpdate) {
+//                handleIncrementalUpdateFailure();
+//            }
+        });
     }
 
     private UpdateConfig getSelectedConfig() {
