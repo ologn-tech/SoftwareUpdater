@@ -75,14 +75,14 @@ public class SystemPropertiesHelper {
     /**
      * Get version
      */
-    public static Double getVersion() {
+    public static String getVersion() {
         // Try getprop command first since SystemProperties might not have access to vendor properties
         String value = getProperty("ro.vendor.software.version", "Unknown");
         if ("Unknown".equals(value)) {
             // Fallback to SystemProperties if getprop fails
             value = getPropertyViaCommand("ro.vendor.software.version", "Unknown");
         }
-        return Double.parseDouble(value);
+        return value;
     }
 
 }
