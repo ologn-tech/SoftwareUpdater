@@ -30,6 +30,7 @@ import tech.ologn.softwareupdater.services.ForegroundPrepareUpdateService;
 import tech.ologn.softwareupdater.utils.DialogHelper;
 import tech.ologn.softwareupdater.utils.SystemPropertiesHelper;
 import tech.ologn.softwareupdater.utils.UpdateConfigs;
+import tech.ologn.softwareupdater.utils.UpdateEngineStatuses;
 
 public class MainActivity extends AppCompatActivity implements ModeActionListener {
 
@@ -55,7 +56,6 @@ public class MainActivity extends AppCompatActivity implements ModeActionListene
     private Button mButtonInstall;
     private ProgressBar mProgressBar;
     private TextView mTextViewUpdaterState;
-    private TextView mTextViewEngineStatus;
     private TextView mTextViewEngineErrorCode;
 
     private List<UpdateConfig> mConfigs;
@@ -110,7 +110,7 @@ public class MainActivity extends AppCompatActivity implements ModeActionListene
 //        loadUpdateConfigs();
 
         mUpdateManager.setOnStateChangeCallback(this::onUpdaterStateChange);
-//        mUpdateManager.setOnEngineStatusUpdateCallback(this::onEngineStatusUpdate);
+        mUpdateManager.setOnEngineStatusUpdateCallback(this::onEngineStatusUpdate);
 //        mUpdateManager.setOnEngineCompleteCallback(this::onEnginePayloadApplicationComplete);
 //        mUpdateManager.setOnProgressUpdateCallback(this::onProgressUpdate);
         mUpdateManager.setUpdateStateManager(mUpdateStateManager);
@@ -239,6 +239,41 @@ public class MainActivity extends AppCompatActivity implements ModeActionListene
                 uiStateRebootRequired();
             }
         });
+    }
+
+    private void uiResetEngineText() {
+        Fragment f = getSupportFragmentManager()
+                .findFragmentById(R.id.fragment_container_view);
+
+        if (f instanceof AdvanceFragment) {
+            ((AdvanceFragment) f).setEngineStatusText(getString(R.string.unknown));
+        }
+    }
+
+    /**
+     * Invoked when {@link UpdateEngine} status changes. Value of {@code status} will
+     * be one of the values from {@link UpdateEngine.UpdateStatusConstants}.
+     */
+    private void onEngineStatusUpdate(int status) {
+        Log.i(TAG, "StatusUpdate - status="
+                + UpdateEngineStatuses.getStatusText(status)
+                + "/" + status);
+        runOnUiThread(() -> {
+            setUiEngineStatus(status);
+        });
+    }
+
+    /**
+     * @param status update engine status code
+     */
+    private void setUiEngineStatus(int status) {
+        String statusText = UpdateEngineStatuses.getStatusText(status);
+        Fragment f = getSupportFragmentManager()
+                .findFragmentById(R.id.fragment_container_view);
+
+        if (f instanceof AdvanceFragment) {
+            ((AdvanceFragment) f).setEngineStatusText(statusText + "/" + status);
+        }
     }
 
     private UpdateConfig getSelectedConfig() {
@@ -400,7 +435,7 @@ public class MainActivity extends AppCompatActivity implements ModeActionListene
                         if (mButtonApplyConfig != null) {
                             mButtonApplyConfig.setEnabled(false);
                         }
-//                        uiResetEngineText();
+                        uiResetEngineText();
 //                        applyUpdate(getSelectedConfig());
                         mIsApply = false;
                         // Reset the fallback flag after applying

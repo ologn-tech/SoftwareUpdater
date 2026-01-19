@@ -24,6 +24,7 @@ public class AdvanceFragment extends Fragment {
     List<UpdateConfig> mConfigs;
     private Spinner mSpinnerConfigs;
     Button mButtonDownloadConfig;
+    TextView mTextViewEngineStatus;
 
     ModeActionListener listener;
     private UpdateBroadcastReceiver.UpdateListener mBroadcastListener;
@@ -132,6 +133,7 @@ public class AdvanceFragment extends Fragment {
         mButtonDownloadConfig = view.findViewById(R.id.buttonDownloadConfig);
         mButtonDownloadConfig.setOnClickListener(v -> listener.onCheckStatus());
 
+        mTextViewEngineStatus = view.findViewById(R.id.textViewEngineStatus);
     }
 
     @Override
@@ -158,6 +160,10 @@ public class AdvanceFragment extends Fragment {
                 .simple_spinner_dropdown_item);
         mSpinnerConfigs.setAdapter(spinnerArrayAdapter);
 
+    }
+
+    public void setEngineStatusText(String text){
+        mTextViewEngineStatus.setText(text);
     }
 
     /**
