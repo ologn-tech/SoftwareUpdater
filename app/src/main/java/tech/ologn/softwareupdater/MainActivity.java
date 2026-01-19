@@ -95,18 +95,17 @@ public class MainActivity extends AppCompatActivity implements ModeActionListene
         }
 
         setupLayoutPreferences();
-//        setupClickListeners();
 
         mUpdateStateManager = new UpdateStateManager(this);
         setupBroadcastReceiver();
 
         uiResetWidgets();
-//        loadUpdateConfigs();
+        loadUpdateConfigs();
 
         mUpdateManager.setOnStateChangeCallback(this::onUpdaterStateChange);
         mUpdateManager.setOnEngineStatusUpdateCallback(this::onEngineStatusUpdate);
         mUpdateManager.setOnEngineCompleteCallback(this::onEnginePayloadApplicationComplete);
-//        mUpdateManager.setOnProgressUpdateCallback(this::onProgressUpdate);
+        mUpdateManager.setOnProgressUpdateCallback(this::onProgressUpdate);
         mUpdateManager.setUpdateStateManager(mUpdateStateManager);
     }
 
@@ -144,11 +143,15 @@ public class MainActivity extends AppCompatActivity implements ModeActionListene
         mTextViewBuild = findViewById(R.id.textViewBuild);
         mTextViewUpdaterState = findViewById(R.id.textViewUpdaterState);
 
+        mProgressBar = findViewById(R.id.progressBar);
     }
 
     /** resets ui */
     private void uiResetWidgets() {
         mTextViewBuild.setText(Build.DISPLAY);
+
+        mProgressBar.setEnabled(false);
+        mProgressBar.setVisibility(ProgressBar.INVISIBLE);
     }
 
     private void uiStateIdle() {
@@ -156,37 +159,30 @@ public class MainActivity extends AppCompatActivity implements ModeActionListene
         if (!mIsNewVersion) {
             return;
         }
+        mProgressBar.setProgress(0);
     }
 
     private void uiStateRunning() {
         uiResetWidgets();
-        if (MODE_ADVANCED.equals(mCurrentMode)) {
-            mProgressBar.setEnabled(true);
-            mProgressBar.setVisibility(ProgressBar.VISIBLE);
-        }
+        mProgressBar.setEnabled(true);
+        mProgressBar.setVisibility(ProgressBar.VISIBLE);
     }
 
     private void uiStatePaused() {
         uiResetWidgets();
-        if (MODE_ADVANCED.equals(mCurrentMode)) {
-            mProgressBar.setEnabled(true);
-            mProgressBar.setVisibility(ProgressBar.VISIBLE);
-        }
+        mProgressBar.setEnabled(true);
+        mProgressBar.setVisibility(ProgressBar.VISIBLE);
     }
 
     private void uiStateSlotSwitchRequired() {
         uiResetWidgets();
-        if (MODE_ADVANCED.equals(mCurrentMode)) {
-            mProgressBar.setEnabled(true);
-            mProgressBar.setVisibility(ProgressBar.VISIBLE);
-        }
+        mProgressBar.setEnabled(true);
+        mProgressBar.setVisibility(ProgressBar.VISIBLE);
     }
 
     private void uiStateError() {
         uiResetWidgets();
-        if (MODE_ADVANCED.equals(mCurrentMode)) {
-            mProgressBar.setVisibility(ProgressBar.VISIBLE);
-        }
+        mProgressBar.setVisibility(ProgressBar.VISIBLE);
     }
 
     private void uiStateRebootRequired() {
@@ -306,6 +302,15 @@ public class MainActivity extends AppCompatActivity implements ModeActionListene
 //                handleIncrementalUpdateFailure();
 //            }
         });
+    }
+
+    /**
+     * Invoked when update progress changes.
+     */
+    private void onProgressUpdate(double progress) {
+        if (mProgressBar != null) {
+            mProgressBar.setProgress((int) (100 * progress));
+        }
     }
 
     private UpdateConfig getSelectedConfig() {
