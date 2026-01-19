@@ -1,5 +1,6 @@
 package tech.ologn.softwareupdater;
 
+import android.app.ActivityManager;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
@@ -108,6 +109,8 @@ public class MainActivity extends AppCompatActivity implements ModeActionListene
         mUpdateManager.setOnEngineCompleteCallback(this::onEnginePayloadApplicationComplete);
         mUpdateManager.setOnProgressUpdateCallback(this::onProgressUpdate);
         mUpdateManager.setUpdateStateManager(mUpdateStateManager);
+
+        restoreActiveOperations();
     }
 
     @Override
@@ -589,6 +592,51 @@ public class MainActivity extends AppCompatActivity implements ModeActionListene
         filter.addAction(ForegroundPrepareUpdateService.ACTION_PREPARE_PROGRESS);
 
         ContextCompat.registerReceiver(this, mBroadcastReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
+    }
+
+    /**
+     * Restore active operations from persistent storage
+     */
+    private void restoreActiveOperations() {
+        List<UpdateStateManager.ActiveDownload> activeDownloads = mUpdateStateManager.getActiveDownloads();
+        List<UpdateStateManager.ActiveUpdate> activeUpdates = mUpdateStateManager.getActiveUpdates();
+
+        if (!activeDownloads.isEmpty() || !activeUpdates.isEmpty()) {
+            Log.i(TAG, "Found active operations: " + activeDownloads.size() + " downloads, " +
+                    activeUpdates.size() + " updates");
+
+            // If there are active updates, they might be stale if the service completed
+            // but didn't send the final broadcast. Clean them up after a delay.
+            if (!activeUpdates.isEmpty()) {
+                Log.i(TAG, "Found " + activeUpdates.size() + " active updates, checking if they're still running...");
+
+                // Check if ForegroundPrepareUpdateService is actually running
+                ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+                List<ActivityManager.RunningServiceInfo> runningServices = am.getRunningServices(Integer.MAX_VALUE);
+                boolean serviceRunning = false;
+
+                for (ActivityManager.RunningServiceInfo service : runningServices) {
+                    if (service.service.getClassName().contains("ForegroundPrepareUpdateService")) {
+                        serviceRunning = true;
+                        onUpdaterStateChange(UpdaterState.RUNNING);
+                        Log.i(TAG, "ForegroundPrepareUpdateService is still running");
+                        break;
+                    }
+                }
+
+                if (!serviceRunning) {
+                    Log.w(TAG, "ForegroundPrepareUpdateService is not running, cleaning up stale active updates");
+                    for (UpdateStateManager.ActiveUpdate update : activeUpdates) {
+                        mUpdateStateManager.removeActiveUpdate(update.updateId);
+                    }
+                    // Update UI to reflect that no updates are running
+                    onUpdaterStateChange(UpdaterState.IDLE);
+                }
+            }
+
+            // Clean up old completed operations
+            mUpdateStateManager.cleanupCompletedOperations();
+        }
     }
 
     public static int compareVersion(String v1, String v2) {
