@@ -350,6 +350,14 @@ public class ForegroundPrepareUpdateService extends Service {
                         
                         File updateOTA = Paths.get(OTA_PACKAGE_DIR, "update.zip").toFile();
 
+                        // Ensure directory exists and has proper permissions
+                        File otaDir = new File(OTA_PACKAGE_DIR);
+                        if (!otaDir.exists()) {
+                            if (!otaDir.mkdirs()) {
+                                Log.w(TAG, "Failed to create directory: " + OTA_PACKAGE_DIR);
+                            }
+                        }
+
                         FileDownloader downloader = new FileDownloader(
                                 config.getUrl(),
                                 0,
@@ -362,15 +370,30 @@ public class ForegroundPrepareUpdateService extends Service {
                         sendBroadcast(ACTION_PREPARE_PROGRESS, currentUpdateId, null, 70);
 
                         try {
-                            Process process = Runtime.getRuntime().exec(
-                                new String[]{"chmod", "660", updateOTA.getAbsolutePath()});
-                            int result = process.waitFor();
-                            if (result != 0) {
-                                Log.w("FileDownloader", "chmod failed with code " + result);
+                            Process dirChmod = Runtime.getRuntime().exec(
+                                new String[]{"chmod", "755", OTA_PACKAGE_DIR});
+                            int dirResult = dirChmod.waitFor();
+                            if (dirResult != 0) {
+                                Log.w(TAG, "chmod directory failed with code " + dirResult);
                             }
-                        } catch (Exception errorChmod) {
-                            Log.e("FileDownloader", "chmod failed", errorChmod);
+                        } catch (Exception error) {
+                            Log.e(TAG, "chmod directory failed", error);
                         }
+
+                        // Set SELinux context for directory (if supported)
+                        try {
+                            Process dirChcon = Runtime.getRuntime().exec(
+                                new String[]{"chcon", "u:object_r:update_engine_file:s0", OTA_PACKAGE_DIR});
+                            int dirChconResult = dirChcon.waitFor();
+                            if (dirChconResult != 0) {
+                                Log.w(TAG, "chcon directory failed with code " + dirChconResult + " (may not be supported)");
+                            }
+                        } catch (Exception error) {
+                            Log.w(TAG, "chcon directory failed (may not be supported)", error);
+                        }
+
+                        // Set permissions for update_engine access
+                        setFilePermissionsForUpdateEngine(updateOTA.getAbsolutePath());
 
                         updateNotification("Preparing Update", "Update package downloaded", 80);
                         sendBroadcast(ACTION_PREPARE_PROGRESS, currentUpdateId, null, 80);
@@ -442,12 +465,16 @@ public class ForegroundPrepareUpdateService extends Service {
         Path metadataPath = Paths.get(OTA_PACKAGE_DIR, PackageFiles.PAYLOAD_METADATA_FILE_NAME);
         try {
             Files.deleteIfExists(metadataPath);
+            File metadataFile = metadataPath.toFile();
             FileDownloader d = new FileDownloader(
                     config.getUrl(),
                     metadataPackageFile.get().getOffset(),
                     metadataPackageFile.get().getSize(),
-                    metadataPath.toFile());
+                    metadataFile);
             d.download();
+            
+            // Set permissions for update_engine access
+            setFilePermissionsForUpdateEngine(metadataFile.getAbsolutePath());
         } catch (IOException e) {
             Log.w(TAG, String.format("Downloading %s from %s failed",
                     PackageFiles.PAYLOAD_METADATA_FILE_NAME,
@@ -459,6 +486,37 @@ public class ForegroundPrepareUpdateService extends Service {
         } catch (Exception e) {
             Log.w(TAG, "UpdateEngine#verifyPayloadMetadata failed", e);
             return true;
+        }
+    }
+
+    /**
+     * Sets proper permissions and SELinux context for a file so update_engine can access it.
+     * 
+     * @param filePath the absolute path to the file
+     */
+    private void setFilePermissionsForUpdateEngine(String filePath) {
+        // Set file permissions (644 - readable by all)
+        try {
+            Process process = Runtime.getRuntime().exec(
+                new String[]{"chmod", "644", filePath});
+            int result = process.waitFor();
+            if (result != 0) {
+                Log.w(TAG, "chmod file failed with code " + result + " for " + filePath);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "chmod file failed for " + filePath, e);
+        }
+
+        // Set SELinux context for file (if supported)
+        try {
+            Process fileChcon = Runtime.getRuntime().exec(
+                new String[]{"chcon", "u:object_r:update_engine_file:s0", filePath});
+            int fileChconResult = fileChcon.waitFor();
+            if (fileChconResult != 0) {
+                Log.w(TAG, "chcon file failed with code " + fileChconResult + " for " + filePath + " (may not be supported)");
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "chcon file failed for " + filePath + " (may not be supported)", e);
         }
     }
 
@@ -486,12 +544,17 @@ public class ForegroundPrepareUpdateService extends Service {
                 sendBroadcast(ACTION_PREPARE_PROGRESS, currentUpdateId, null, 
                         40 + (currentFile * 30 / totalFiles));
                 
+                File downloadedFile = Paths.get(dir, file.getFilename()).toFile();
                 FileDownloader downloader = new FileDownloader(
                         config.getUrl(),
                         file.getOffset(),
                         file.getSize(),
-                        Paths.get(dir, file.getFilename()).toFile());
+                        downloadedFile);
                 downloader.download();
+                
+                // Set permissions for update_engine access
+                setFilePermissionsForUpdateEngine(downloadedFile.getAbsolutePath());
+                
                 currentFile++;
             }
         }
