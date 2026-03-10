@@ -9,7 +9,7 @@ android {
     defaultConfig {
         applicationId "tech.ologn.softwareupdater"
         minSdk 24
-        targetSdk 36
+        targetSdk 27
         versionCode 1
         versionName "1.0"
 
